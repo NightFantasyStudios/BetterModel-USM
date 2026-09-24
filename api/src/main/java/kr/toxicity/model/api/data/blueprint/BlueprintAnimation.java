@@ -13,6 +13,7 @@ import kr.toxicity.model.api.animation.AnimationProgress;
 import kr.toxicity.model.api.animation.TimedStorage;
 import kr.toxicity.model.api.bone.BoneName;
 import kr.toxicity.model.api.script.BlueprintScript;
+import kr.toxicity.model.api.util.MathUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.Unmodifiable;
@@ -33,6 +34,7 @@ import java.util.Map;
  * @param animator a map of animators for each bone
  * @param script the script associated with this animation, if any
  * @param emptyAnimator a list of empty movements, used as a fallback or for initialization
+ * @param frameDuration the base frame duration in seconds
  * @since 1.15.2
  */
 public record BlueprintAnimation(
@@ -42,8 +44,46 @@ public record BlueprintAnimation(
     boolean override,
     @NotNull @Unmodifiable Map<BoneName, BlueprintAnimator> animator,
     @Nullable BlueprintScript script,
-    @NotNull TimedStorage<AnimationProgress> emptyAnimator
+    @NotNull TimedStorage<AnimationProgress> emptyAnimator,
+    float frameDuration
 ) {
+
+    /**
+     * Creates a blueprint animation, calculating frameDuration automatically from animators.
+     *
+     * @param name the name of the animation
+     * @param loop the default loop mode
+     * @param length the length of the animation in seconds
+     * @param override whether this animation overrides others
+     * @param animator a map of animators for each bone
+     * @param script the script associated with this animation, if any
+     * @param emptyAnimator a list of empty movements, used as a fallback or for initialization
+     */
+    public BlueprintAnimation(
+        @NotNull String name,
+        @NotNull AnimationIterator.Type loop,
+        float length,
+        boolean override,
+        @NotNull @Unmodifiable Map<BoneName, BlueprintAnimator> animator,
+        @Nullable BlueprintScript script,
+        @NotNull TimedStorage<AnimationProgress> emptyAnimator
+    ) {
+        this(name, loop, length, override, animator, script, emptyAnimator, calculateFrameDuration(animator));
+    }
+
+    private static float calculateFrameDuration(@NotNull Map<BoneName, BlueprintAnimator> animator) {
+        var min = Float.MAX_VALUE;
+        for (var a : animator.values()) {
+            var kf = a.keyframe();
+            for (int i = 0; i < kf.size(); i++) {
+                var t = kf.get(i).time();
+                if (t > MathUtil.FLOAT_COMPARISON_EPSILON && t < min) {
+                    min = t;
+                }
+            }
+        }
+        return min < Float.MAX_VALUE ? min : 0.05F;
+    }
 
     /**
      * Retrieves the script for this animation, considering the provided modifier.

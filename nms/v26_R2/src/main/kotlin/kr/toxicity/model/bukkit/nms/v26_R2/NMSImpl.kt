@@ -69,6 +69,13 @@ class NMSImpl : NMS {
         //Spigot
         private val getGameProfile: (net.minecraft.world.entity.player.Player) -> GameProfile = createAdaptedFieldGetter { it.gameProfile }
         private val getConnection: (ServerCommonPacketListenerImpl) -> Connection = createAdaptedFieldGetter { it.connection }
+        private val getEntityEventEntityId: (ClientboundEntityEventPacket) -> Int = ClientboundEntityEventPacket::class.java.declaredFields.first {
+            it.type == java.lang.Integer.TYPE
+        }.apply {
+            isAccessible = true
+        }.let { field ->
+            { packet -> field.getInt(packet) }
+        }
         private val spigotChunkAccess = ServerLevel::class.java.fields.firstOrNull {
             it.type == PersistentEntitySectionManager::class.java
         }?.apply {
@@ -212,6 +219,7 @@ class NMSImpl : NMS {
                     }
                 }
                 is ClientboundUpdateAttributesPacket if entityId.toPlayerEntity() is HitBox -> return null
+                is ClientboundEntityEventPacket if eventId == 3.toByte() && getEntityEventEntityId(this).toRegistry() != null -> return null
                 is ClientboundSetEntityDataPacket -> id.toRegistry {
                     return ClientboundSetEntityDataPacket(id, hitBoxData)
                 }?.let { registry ->

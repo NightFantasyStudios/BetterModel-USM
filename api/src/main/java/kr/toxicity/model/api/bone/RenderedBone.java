@@ -517,7 +517,32 @@ public final class RenderedBone implements BoneEventHandler {
         @Nullable Boolean skipLastFrame,
         @Nullable Boolean emptyZero
     ) {
-        return getOrCreateState(modifier.player()).setStateAnimationSlot(slotKey, priority, animation, modifier, skipLastFrame, emptyZero);
+        return setStateAnimationSlot(slotKey, priority, animation, modifier, skipLastFrame, emptyZero, null);
+    }
+
+    /**
+     * Sets or replaces a state-machine animation slot for this bone with a completion callback.
+     *
+     * @param slotKey the slot identifier
+     * @param priority the layer priority
+     * @param animation the animation to play
+     * @param modifier the animation modifier
+     * @param skipLastFrame true to avoid replaying the terminal frame during looping
+     * @param emptyZero true to treat missing channels as default zeroed transforms
+     * @param onEnd callback executed when the slot finishes playback and lerp-out
+     * @return true if the slot changed
+     * @since 3.4.2-nf.2
+     */
+    public boolean setStateAnimationSlot(
+        @NotNull String slotKey,
+        int priority,
+        @NotNull BlueprintAnimation animation,
+        @NotNull AnimationModifier modifier,
+        @Nullable Boolean skipLastFrame,
+        @Nullable Boolean emptyZero,
+        @Nullable Runnable onEnd
+    ) {
+        return getOrCreateState(modifier.player()).setStateAnimationSlot(slotKey, priority, animation, modifier, skipLastFrame, emptyZero, onEnd);
     }
 
     /**
@@ -676,10 +701,23 @@ public final class RenderedBone implements BoneEventHandler {
             @Nullable Boolean skipLastFrame,
             @Nullable Boolean emptyZero
         ) {
-            var changed = layerEngine.setSlot(slotKey, priority, animation, modifier, skipLastFrame, emptyZero);
+            return setStateAnimationSlot(slotKey, priority, animation, modifier, skipLastFrame, emptyZero, null);
+        }
+
+        boolean setStateAnimationSlot(
+            @NotNull String slotKey,
+            int priority,
+            @NotNull BlueprintAnimation animation,
+            @NotNull AnimationModifier modifier,
+            @Nullable Boolean skipLastFrame,
+            @Nullable Boolean emptyZero,
+            @Nullable Runnable onEnd
+        ) {
+            var changed = layerEngine.setSlot(slotKey, priority, animation, modifier, skipLastFrame, emptyZero, onEnd);
             if (changed) {
                 updateAfter.set(true);
                 updateCurrent.set(true);
+                markChildrenDirty();
             }
             return changed;
         }
@@ -689,6 +727,7 @@ public final class RenderedBone implements BoneEventHandler {
             if (changed) {
                 updateAfter.set(true);
                 updateCurrent.set(true);
+                markChildrenDirty();
             }
             return changed;
         }
@@ -698,6 +737,21 @@ public final class RenderedBone implements BoneEventHandler {
             stateMachineFrame = 0F;
             updateAfter.set(true);
             updateCurrent.set(true);
+            markChildrenDirty();
+        }
+
+        private void markChildrenDirty() {
+            for (RenderedBone child : children) {
+                child.state(uuid).markDirty();
+            }
+        }
+
+        void markDirty() {
+            if (updateAfter.compareAndSet(false, true)) {
+                lock.accessToWriteLock(() -> before.set(current));
+                updateCurrent.set(true);
+                markChildrenDirty();
+            }
         }
 
         @NotNull BoneMovement after() {
@@ -756,6 +810,7 @@ public final class RenderedBone implements BoneEventHandler {
             if (result && updateAfter.compareAndSet(false, true)) {
                 lock.accessToWriteLock(() -> before.set(current));
                 updateCurrent.set(true);
+                markChildrenDirty();
             }
             firstTick = false;
             return result;
@@ -768,14 +823,16 @@ public final class RenderedBone implements BoneEventHandler {
         private int interpolationDuration() {
             if (skipInterpolation) return 0;
             if (layerEngine.hasSlots()) {
-                if (stateMachineFrame <= MathUtil.FLOAT_COMPARISON_EPSILON) {
-                    return 0;
-                }
-                var frame = 20F * stateMachineFrame;
-                return Math.max(1, Math.round(frame + MathUtil.FLOAT_COMPARISON_EPSILON));
+                return 1;
             }
             var frame = state.frame() / (float) Tracker.MINECRAFT_TICK_MULTIPLIER;
-            return Math.round(frame + MathUtil.FLOAT_COMPARISON_EPSILON);
+            var rounded = Math.round(frame + MathUtil.FLOAT_COMPARISON_EPSILON);
+            if (rounded > 0) return rounded;
+            if (parent != null) {
+                var parentDuration = parent.state(uuid).interpolationDuration();
+                if (parentDuration > 0) return parentDuration;
+            }
+            return 1;
         }
 
         private void sendTransformation(@NotNull AnimationBundler bundler) {

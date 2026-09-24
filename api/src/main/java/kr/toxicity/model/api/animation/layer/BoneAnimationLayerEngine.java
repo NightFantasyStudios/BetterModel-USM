@@ -92,6 +92,31 @@ public final class BoneAnimationLayerEngine {
         @Nullable Boolean skipLastFrame,
         @Nullable Boolean emptyZero
     ) {
+        return setSlot(slotKey, priority, animation, modifier, skipLastFrame, emptyZero, null);
+    }
+
+    /**
+     * Replaces or creates a layer slot with an optional completion callback.
+     *
+     * @param slotKey slot identifier
+     * @param priority slot priority
+     * @param animation animation source
+     * @param modifier animation modifier
+     * @param skipLastFrame whether loop playback should omit the terminal replay frame
+     * @param emptyZero whether empty channels should behave as zero/default channels
+     * @param onEnd callback to execute when the slot playback and lerp-out complete
+     * @return true if the slot changed
+     * @since 3.0.2
+     */
+    public boolean setSlot(
+        @NotNull String slotKey,
+        int priority,
+        @NotNull BlueprintAnimation animation,
+        @NotNull AnimationModifier modifier,
+        @Nullable Boolean skipLastFrame,
+        @Nullable Boolean emptyZero,
+        @Nullable Runnable onEnd
+    ) {
         var type = modifier.type(animation.loop());
         var animator = animation.animator().get(boneName);
         var slot = new StateAnimationSlot(
@@ -104,7 +129,8 @@ public final class BoneAnimationLayerEngine {
             modifier.override(animation.override()),
             animator != null ? copyChannels(animator.channels()) : EnumSet.noneOf(AnimationChannel.class),
             Boolean.TRUE.equals(skipLastFrame),
-            Boolean.TRUE.equals(emptyZero)
+            Boolean.TRUE.equals(emptyZero),
+            onEnd
         );
         synchronized (stateSlots) {
             var previous = stateSlotsByKey.get(slotKey);
@@ -112,7 +138,7 @@ public final class BoneAnimationLayerEngine {
                 if (sameSlot(previous, priority, animation, modifier, type, skipLastFrame, emptyZero)) {
                     return false;
                 }
-                slot.capturePrevious(previous.sampleCurrent());
+                slot.capturePrevious(previous);
                 removeSlot(previous);
             }
             addSlot(slot);
@@ -182,6 +208,26 @@ public final class BoneAnimationLayerEngine {
             }
             return changed;
         }
+    }
+
+    /**
+     * Retrieves the active frame duration across currently evaluated animation slots.
+     *
+     * @return the active frame duration in seconds, or 0 if none
+     * @since 3.0.2
+     */
+    public float activeFrameDuration() {
+        synchronized (stateSlots) {
+            for (var byPriority : stateSlots.values()) {
+                for (var slot : byPriority.values()) {
+                    if (slot.modifier().predicateValue()) {
+                        var d = slot.animation().frameDuration();
+                        if (d > MathUtil.FLOAT_COMPARISON_EPSILON) return d;
+                    }
+                }
+            }
+        }
+        return 0F;
     }
 
     /**
@@ -326,15 +372,17 @@ public final class BoneAnimationLayerEngine {
         @NotNull EnumSet<AnimationChannel> channels,
         float elapsedSeconds,
         @NotNull AnimationIterator.Type type,
-        float speed
+        float speed,
+        float fallbackFrameDuration
     ) {
+        var fallbackDuration = (fallbackFrameDuration > MathUtil.FLOAT_COMPARISON_EPSILON ? fallbackFrameDuration : 0.05F) / speed;
         if (animator == null || channels.isEmpty()) {
-            return new SampledState(new BoneMovement().set(defaultFrame), EnumSet.noneOf(AnimationChannel.class), false, false, 0F);
+            return new SampledState(new BoneMovement().set(defaultFrame), EnumSet.noneOf(AnimationChannel.class), false, false, fallbackDuration);
         }
 
         var keyframe = animator.keyframe();
         if (keyframe.size() == 0) {
-            return new SampledState(new BoneMovement().set(defaultFrame), copyChannels(channels), false, false, 0F);
+            return new SampledState(new BoneMovement().set(defaultFrame), copyChannels(channels), false, false, fallbackDuration);
         }
 
         if (elapsedSeconds <= MathUtil.FLOAT_COMPARISON_EPSILON) {
@@ -344,7 +392,7 @@ public final class BoneAnimationLayerEngine {
                 copyChannels(channels),
                 progress.skipInterpolation(),
                 progress.globalRotation(),
-                keyframe.size() > 1 ? keyframe.get(1).time() / speed : 0F
+                keyframe.size() > 1 ? keyframe.get(1).time() / speed : fallbackDuration
             );
         }
 
@@ -392,7 +440,7 @@ public final class BoneAnimationLayerEngine {
             copyChannels(channels),
             keyframe.getLast().skipInterpolation(),
             keyframe.getLast().globalRotation(),
-            0F
+            fallbackDuration
         );
     }
 
@@ -446,7 +494,7 @@ public final class BoneAnimationLayerEngine {
         var currentValue = override
             ? sample.movement().rawRotation()
             : target.rawRotation().add(sample.movement().rawRotation().sub(defaultFrame.rawRotation(), new Vector3f()), new Vector3f());
-        target.rawRotation().set(InterpolationUtil.lerp(currentValue, target.rawRotation(), alpha, new Vector3f()));
+        target.rawRotation().set(InterpolationUtil.lerpRotation(currentValue, target.rawRotation(), alpha, new Vector3f()));
         MathUtil.toQuaternion(target.rawRotation(), target.rotation());
     }
 
@@ -510,7 +558,7 @@ public final class BoneAnimationLayerEngine {
                 ? previousSample.movement().rawRotation()
                 : base.add(previousSample.movement().rawRotation().sub(defaultFrame.rawRotation(), new Vector3f()), new Vector3f()))
             : base;
-        target.rawRotation().set(InterpolationUtil.lerp(previousValue, currentValue, alpha, new Vector3f()));
+        target.rawRotation().set(InterpolationUtil.lerpRotation(previousValue, currentValue, alpha, new Vector3f()));
         MathUtil.toQuaternion(target.rawRotation(), target.rotation());
     }
 
@@ -552,7 +600,9 @@ public final class BoneAnimationLayerEngine {
         private final EnumSet<AnimationChannel> channels;
         private final boolean skipLastFrame;
         private final boolean emptyZero;
+        private final @Nullable Runnable onEnd;
         private SlotPhase phase;
+        private @Nullable StateAnimationSlot outgoingSlot;
         private @Nullable SampledState previous;
         private float elapsedSeconds;
         private float phaseSeconds;
@@ -567,7 +617,8 @@ public final class BoneAnimationLayerEngine {
             boolean override,
             @NotNull EnumSet<AnimationChannel> channels,
             boolean skipLastFrame,
-            boolean emptyZero
+            boolean emptyZero,
+            @Nullable Runnable onEnd
         ) {
             this.slotKey = slotKey;
             this.priority = priority;
@@ -579,6 +630,7 @@ public final class BoneAnimationLayerEngine {
             this.channels = channels;
             this.skipLastFrame = skipLastFrame;
             this.emptyZero = emptyZero;
+            this.onEnd = onEnd;
             this.phase = modifier.start() > 0 ? SlotPhase.LERPIN : SlotPhase.PLAY;
         }
 
@@ -632,11 +684,19 @@ public final class BoneAnimationLayerEngine {
             return Math.clamp(phaseSeconds / (modifier.end() / 20F), 0F, 1F);
         }
 
+        private void capturePrevious(@NotNull StateAnimationSlot previousSlot) {
+            this.outgoingSlot = previousSlot;
+            this.previous = previousSlot.sampleCurrent();
+        }
+
         private void capturePrevious(@NotNull SampledState previous) {
             this.previous = previous;
         }
 
         private @Nullable SampledState previous() {
+            if (outgoingSlot != null) {
+                return outgoingSlot.sampleCurrent();
+            }
             return previous;
         }
 
@@ -646,6 +706,7 @@ public final class BoneAnimationLayerEngine {
             }
             phase = SlotPhase.LERPOUT;
             phaseSeconds = 0F;
+            outgoingSlot = null;
             previous = null;
             return true;
         }
@@ -657,7 +718,8 @@ public final class BoneAnimationLayerEngine {
                 effectiveChannels,
                 elapsedSeconds,
                 type,
-                Math.max(modifier.speedValue(), MathUtil.FLOAT_COMPARISON_EPSILON)
+                Math.max(modifier.speedValue(), MathUtil.FLOAT_COMPARISON_EPSILON),
+                animation.frameDuration()
             );
         }
 
@@ -665,15 +727,49 @@ public final class BoneAnimationLayerEngine {
             var changed = false;
             if (phase == SlotPhase.LERPOUT) {
                 phaseSeconds += TRACKER_TICK_SECONDS;
-                return new TickResult(true, phaseSeconds >= modifier.end() / 20F);
+                var speed = Math.max(modifier.speedValue(), MathUtil.FLOAT_COMPARISON_EPSILON);
+                switch (type) {
+                    case LOOP -> {
+                        if (animation.length() > MathUtil.FLOAT_COMPARISON_EPSILON) {
+                            var delta = TRACKER_TICK_SECONDS * speed;
+                            var loopLength = animation.length() + (skipLastFrame ? 0F : delta);
+                            elapsedSeconds = loopLength <= MathUtil.FLOAT_COMPARISON_EPSILON
+                                ? 0F
+                                : (elapsedSeconds + delta) % loopLength;
+                        }
+                    }
+                    case HOLD_ON_LAST, PLAY_ONCE -> {
+                        if (animation.length() > MathUtil.FLOAT_COMPARISON_EPSILON && elapsedSeconds < animation.length()) {
+                            elapsedSeconds = Math.min(animation.length(), elapsedSeconds + TRACKER_TICK_SECONDS * speed);
+                        }
+                    }
+                }
+                boolean remove = phaseSeconds >= modifier.end() / 20F;
+                if (remove && onEnd != null) {
+                    try {
+                        onEnd.run();
+                    } catch (Exception ignored) {
+                    }
+                }
+                return new TickResult(true, remove);
             }
 
             if (phase == SlotPhase.LERPIN) {
                 phaseSeconds += TRACKER_TICK_SECONDS;
                 changed = true;
+                if (outgoingSlot != null) {
+                    outgoingSlot.tick();
+                }
                 if (phaseSeconds >= modifier.start() / 20F) {
                     phase = SlotPhase.PLAY;
                     phaseSeconds = 0F;
+                    if (outgoingSlot != null && outgoingSlot.onEnd != null) {
+                        try {
+                            outgoingSlot.onEnd.run();
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    outgoingSlot = null;
                     previous = null;
                 }
                 return new TickResult(changed, false);
@@ -706,8 +802,15 @@ public final class BoneAnimationLayerEngine {
                 if (modifier.end() > 0) {
                     phase = SlotPhase.LERPOUT;
                     phaseSeconds = 0F;
+                    outgoingSlot = null;
                     previous = null;
                     return new TickResult(true, false);
+                }
+                if (onEnd != null) {
+                    try {
+                        onEnd.run();
+                    } catch (Exception ignored) {
+                    }
                 }
                 return new TickResult(true, true);
             }

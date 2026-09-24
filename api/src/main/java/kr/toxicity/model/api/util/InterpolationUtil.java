@@ -190,6 +190,38 @@ public final class InterpolationUtil {
         return fma(p1 - p0, alpha, p0);
     }
 
+    /**
+     * Lerps two angles in degrees along the shortest circular arc.
+     * @param p0 source angle in degrees
+     * @param p1 destination angle in degrees
+     * @param alpha interpolation factor [0, 1]
+     * @return interpolated angle in degrees wrapped to [-180, 180)
+     */
+    public static float lerpAngle(float p0, float p1, float alpha) {
+        var diff = (p1 - p0) % 360.0F;
+        if (diff >= 180.0F) diff -= 360.0F;
+        if (diff < -180.0F) diff += 360.0F;
+        var result = (p0 + diff * alpha) % 360.0F;
+        if (result >= 180.0F) result -= 360.0F;
+        if (result < -180.0F) result += 360.0F;
+        return result;
+    }
+
+    /**
+     * Lerps two 3D rotation vectors in Euler angles (degrees) along the shortest circular arc.
+     * @param p0 source Euler angles
+     * @param p1 target Euler angles
+     * @param alpha interpolation factor [0, 1]
+     * @param dest destination vector
+     * @return destination vector with interpolated Euler angles
+     */
+    public static @NotNull Vector3f lerpRotation(@NotNull Vector3f p0, @NotNull Vector3f p1, float alpha, @NotNull Vector3f dest) {
+        dest.x = lerpAngle(p0.x, p1.x, alpha);
+        dest.y = lerpAngle(p0.y, p1.y, alpha);
+        dest.z = lerpAngle(p0.z, p1.z, alpha);
+        return dest;
+    }
+
     private static float cubicBezier(float p0, float p1, float p2, float p3, float t) {
         var u = 1.0F - t;
         var uu = u * u;
