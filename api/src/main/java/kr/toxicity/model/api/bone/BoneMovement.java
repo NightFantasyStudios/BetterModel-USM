@@ -72,7 +72,7 @@ public record BoneMovement(
     public @NotNull BoneMovement lerp(@NotNull BoneMovement to, float alpha, @NotNull BoneMovement dest) {
         InterpolationUtil.lerp(position, to.position, alpha, dest.position);
         InterpolationUtil.lerp(scale, to.scale, alpha, dest.scale);
-        MathUtil.toQuaternion(InterpolationUtil.lerp(rawRotation, to.rawRotation, alpha, dest.rawRotation), dest.rotation);
+        MathUtil.toQuaternion(InterpolationUtil.lerpRotation(rawRotation, to.rawRotation, alpha, dest.rawRotation), dest.rotation);
         return dest;
     }
 }

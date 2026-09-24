@@ -370,7 +370,9 @@ public final class EntityTrackerRegistry {
      */
     public boolean close(@NotNull TrackerCloseReason reason) {
         if (!closed.compareAndSet(false, true)) return false;
-        viewedPlayer().forEach(value -> value.sendEntityData(this));
+        if (!entity.dead()) {
+            viewedPlayer().forEach(value -> value.sendEntityData(this));
+        }
         viewedPlayerMap.clear();
         for (EntityTracker value : trackers()) {
             value.close(reason);
@@ -580,7 +582,9 @@ public final class EntityTrackerRegistry {
         var cache = viewedPlayerMap.remove(player.uuid());
         if (cache == null) return false;
         var handler = cache.channelHandler;
-        handler.sendEntityData(this);
+        if (!entity.dead()) {
+            handler.sendEntityData(this);
+        }
         for (EntityTracker value : trackers()) {
             if (!value.forRemoval() && value.isSpawned(player)) value.remove(handler.player());
         }

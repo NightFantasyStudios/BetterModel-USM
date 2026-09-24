@@ -22,6 +22,7 @@ import java.util.function.Supplier;
 @ApiStatus.Internal
 public final class LazyFloatProvider {
     private final FloatSupplier requiredTime;
+    private final boolean angle;
     private long time = System.currentTimeMillis();
     private float storedValue;
     private boolean first = true;
@@ -45,7 +46,17 @@ public final class LazyFloatProvider {
      * @param requiredTime required time supplier
      */
     public LazyFloatProvider(@NotNull FloatSupplier requiredTime) {
+        this(requiredTime, false);
+    }
+
+    /**
+     * Creates from time supplier with angle wrapping option
+     * @param requiredTime required time supplier
+     * @param angle whether to interpolate as an angle in degrees
+     */
+    public LazyFloatProvider(@NotNull FloatSupplier requiredTime, boolean angle) {
         this.requiredTime = requiredTime;
+        this.angle = angle;
     }
 
     /**
@@ -54,7 +65,17 @@ public final class LazyFloatProvider {
      * @param initialValue initial value
      */
     public LazyFloatProvider(float initialValue, @NotNull FloatSupplier requiredTime) {
-        this(requiredTime);
+        this(initialValue, requiredTime, false);
+    }
+
+    /**
+     * Creates from time supplier with angle wrapping option
+     * @param initialValue initial value
+     * @param requiredTime required time supplier
+     * @param angle whether to interpolate as an angle in degrees
+     */
+    public LazyFloatProvider(float initialValue, @NotNull FloatSupplier requiredTime, boolean angle) {
+        this(requiredTime, angle);
         this.storedValue = initialValue;
     }
 
@@ -72,11 +93,9 @@ public final class LazyFloatProvider {
         var current = System.currentTimeMillis();
         var alpha = Math.clamp((float) (current - time) / req, 0, 1);
         time = current;
-        return storedValue = InterpolationUtil.lerp(
-            storedValue,
-            updateValue,
-            alpha
-        );
+        return storedValue = angle
+            ? InterpolationUtil.lerpAngle(storedValue, updateValue, alpha)
+            : InterpolationUtil.lerp(storedValue, updateValue, alpha);
     }
 
     /**

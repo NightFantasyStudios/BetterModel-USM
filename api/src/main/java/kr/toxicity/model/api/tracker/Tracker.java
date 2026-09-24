@@ -278,6 +278,17 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
      */
     public void scaler(@NotNull ModelScaler scaler) {
         this.scaler = Objects.requireNonNull(scaler);
+        forceUpdate(true);
+    }
+
+    /**
+     * Sets the model scale to a constant value.
+     *
+     * @param scale the scale factor
+     * @since 3.4.2-nf.2
+     */
+    public void scale(float scale) {
+        scaler(ModelScaler.value(scale));
     }
 
     /**

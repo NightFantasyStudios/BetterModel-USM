@@ -78,7 +78,7 @@ public final class EntityBodyRotator {
             entity.pitch(),
             entity.yaw()
         );
-        this.provider = new LazyFloatProvider(entity.yaw(), () -> rotationDuration * MathUtil.MINECRAFT_TICK_MILLS);
+        this.provider = new LazyFloatProvider(entity.yaw(), () -> rotationDuration * MathUtil.MINECRAFT_TICK_MILLS, true);
         var vector = new Vector3f();
         var vectorSupplier = LazyFloatProvider.ofVector(() -> 3 * MathUtil.MINECRAFT_TICK_MILLS, () -> vector.set(
             clampHead(entity.pitch()),
