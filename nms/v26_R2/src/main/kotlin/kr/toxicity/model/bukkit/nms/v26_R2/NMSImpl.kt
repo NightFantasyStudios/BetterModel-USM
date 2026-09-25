@@ -236,15 +236,15 @@ class NMSImpl : NMS {
                     bundlerOf(it.mountPacket(connection.player)).send(player.wrap())
                 }
                 is ClientboundContainerSetSlotPacket if isEquipment(connection.player) && playerModel?.hideOption(uuid)?.equipment() == true -> {
-                    return ClientboundContainerSetSlotPacket(containerId, stateId, slot, EMPTY_ITEM)
+                    return ClientboundContainerSetSlotPacket(containerId, stateId, slot, if (slot in PLAYER_ARMOR_SLOT) EMPTY_ITEM else item.hiddenInHand())
                 }
                 is ClientboundContainerSetContentPacket if containerId == 0 && playerModel?.hideOption(uuid)?.equipment() == true -> {
                     return ClientboundContainerSetContentPacket(
                         containerId,
                         stateId,
                         items.apply {
-                            PLAYER_EQUIPMENT_SLOT.forEach(IntConsumer { set(it, EMPTY_ITEM) })
-                            set(connection.player.hotbarSlot, EMPTY_ITEM)
+                            PLAYER_EQUIPMENT_SLOT.forEach(IntConsumer { set(it, if (it in PLAYER_ARMOR_SLOT) EMPTY_ITEM else get(it).hiddenInHand()) })
+                            set(connection.player.hotbarSlot, get(connection.player.hotbarSlot).hiddenInHand())
                         },
                         carriedItem
                     )
@@ -389,3 +389,16 @@ class NMSImpl : NMS {
 
     override fun isProxyOnlineMode(): Boolean = ONLINE_MODE
 }
+
+/**
+ * The player's own held and off-hand items while their limb is shown, as their client gets them: the
+ * real stack drawn by an item model that draws nothing (`<namespace>:hidden_item`). Emptying the slot
+ * hid the item just the same, but an empty hand sends no use packet, so a right click in the air
+ * never reached the server - the item stopped working for as long as the model was on.
+ */
+private fun VanillaItemStack.hiddenInHand(): VanillaItemStack = if (isEmpty) this else copy().apply {
+    set(DataComponents.ITEM_MODEL, Identifier.fromNamespaceAndPath(CONFIG.namespace(), "hidden_item"))
+}
+
+/** Armour slots stay empty: armour is drawn from its equippable asset, not its item model. */
+private val PLAYER_ARMOR_SLOT = setOf(5, 6, 7, 8)

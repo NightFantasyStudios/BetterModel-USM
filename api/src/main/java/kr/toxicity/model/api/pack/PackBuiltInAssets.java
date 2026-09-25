@@ -74,6 +74,13 @@ record PackBuiltInAssets(
             BlueprintElement.MESH_PIXEL + ".png",
             zipper -> zipper.assets().bettermodel().textures(),
             () -> MESH_PIXEL_IMAGE
+        ),
+        // An item model that draws nothing: a player's own held item while their limb is shown keeps
+        // its stack (so it still works) and wears this instead of being emptied.
+        new PackBuiltInAssets(
+            "hidden_item.json",
+            zipper -> zipper.assets().bettermodel().items(),
+            () -> "{\"model\":{\"type\":\"minecraft:empty\"}}".getBytes(StandardCharsets.UTF_8)
         )
     );
 
