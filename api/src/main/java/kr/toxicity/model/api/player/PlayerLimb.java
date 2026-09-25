@@ -17,6 +17,7 @@ import kr.toxicity.model.api.util.TransformedItemStack;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
+import org.joml.Vector3f;
 
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -60,6 +61,23 @@ public enum PlayerLimb {
      */
     LEFT_FOREARM(
         (d, _) -> d.leftForeArm(),
+        PlatformItemTransform.FIXED
+    ),
+    /**
+     * Right arm turning about the shoulder, as vanilla's and the Better Combat/PlayerAnimationLib
+     * rig's arm does: its pivot sits 2 pixels below the top of the arm and 1 pixel in from its middle
+     * (half a pixel for a slim arm). {@link #RIGHT_ARM} turns about the top of the arm instead, so an
+     * animation authored on that rig swung the arm about the wrong point.
+     */
+    RIGHT_SHOULDER_ARM(
+        (d, a) -> shoulderPivot(d, d.rightArm(a), -1F),
+        PlatformItemTransform.FIXED
+    ),
+    /**
+     * Left arm turning about the shoulder, see {@link #RIGHT_SHOULDER_ARM}.
+     */
+    LEFT_SHOULDER_ARM(
+        (d, a) -> shoulderPivot(d, d.leftArm(a), 1F),
         PlatformItemTransform.FIXED
     ),
     /**
@@ -112,6 +130,24 @@ public enum PlayerLimb {
         PlatformItemTransform.FIXED
     ),
     ;
+
+    /**
+     * Moves an arm piece so its bone's origin is the shoulder. The piece hangs from its own top; the
+     * offset turns with the bone, so the arm swings about the origin. Render space has x negated
+     * against Blockbench's, so the right arm's outside is -x there. Offsets are in skin pixels, which
+     * the limb pieces draw at 0.9375 of a model pixel.
+     *
+     * @param data skin
+     * @param arm the arm piece
+     * @param outward the sign of the arm's outside along render x
+     * @return the moved piece
+     */
+    private static @NotNull TransformedItemStack shoulderPivot(@NotNull SkinData data, @NotNull TransformedItemStack arm, float outward) {
+        var inset = data.profile().skin().slim() ? 0.5F : 1F;
+        return arm.offset(new Vector3f(outward * inset, 2F, 0F).mul(SKIN_PIXEL));
+    }
+
+    private static final float SKIN_PIXEL = 0.9375F / 16F;
 
     private final @NotNull BiFunction<SkinData, PlayerArmor, TransformedItemStack> skinMapper;
     private final @NotNull PlatformItemTransform transform;
