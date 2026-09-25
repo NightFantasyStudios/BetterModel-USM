@@ -25,6 +25,7 @@ import kr.toxicity.model.api.nms.ModelDisplay;
 import kr.toxicity.model.api.nms.PacketBundler;
 import kr.toxicity.model.api.nms.PlayerChannelHandler;
 import kr.toxicity.model.api.platform.PlatformEntity;
+import kr.toxicity.model.api.platform.PlatformItemStack;
 import kr.toxicity.model.api.platform.PlatformPlayer;
 import kr.toxicity.model.api.util.CollectionUtil;
 import kr.toxicity.model.api.util.FunctionUtil;
@@ -575,6 +576,21 @@ public final class EntityTrackerRegistry {
             if (!value.forRemoval() && value.isSpawned(player)) value.remove(handler.player());
         }
         return true;
+    }
+
+    /**
+     * Returns how the tracked player sees the items in their own hands: the first tracker that set
+     * one ({@link EntityTracker#ownHandItem(Function)}), or null for the default.
+     *
+     * @return the mapper, or null
+     * @since 3.5.0-nf.1
+     */
+    public @Nullable Function<PlatformItemStack, @Nullable PlatformItemStack> ownHandItem() {
+        for (EntityTracker tracker : trackers) {
+            var mapper = tracker.ownHandItem();
+            if (mapper != null) return mapper;
+        }
+        return null;
     }
 
     /**

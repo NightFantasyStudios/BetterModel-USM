@@ -19,6 +19,7 @@ import kr.toxicity.model.api.event.DismountModelEvent;
 import kr.toxicity.model.api.event.MountModelEvent;
 import kr.toxicity.model.api.nms.HitBox;
 import kr.toxicity.model.api.nms.HitBoxListener;
+import kr.toxicity.model.api.platform.PlatformItemStack;
 import kr.toxicity.model.api.platform.PlatformLocation;
 import kr.toxicity.model.api.platform.PlatformPlayer;
 import kr.toxicity.model.api.util.EventUtil;
@@ -75,6 +76,7 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
 
     private final EntityBodyRotator bodyRotator;
     private EntityHideOption hideOption = EntityHideOption.DEFAULT;
+    private volatile @Nullable Function<PlatformItemStack, @Nullable PlatformItemStack> ownHandItem;
 
     private volatile PlatformLocation location;
 
@@ -417,5 +419,36 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
      */
     public synchronized void spawnCondition(@NotNull Predicate<PlatformPlayer> condition) {
        this.spawnCondition = this.spawnCondition.and(Objects.requireNonNull(condition));
+    }
+
+    /**
+     * Returns how the tracked player sees the items in their own hands while this tracker hides
+     * their equipment, or null for the default.
+     *
+     * @return the mapper, or null
+     * @since 3.5.0-nf.1
+     */
+    public @Nullable Function<PlatformItemStack, @Nullable PlatformItemStack> ownHandItem() {
+        return ownHandItem;
+    }
+
+    /**
+     * Sets how the tracked player sees the items in their own hands (main hand and off hand) while
+     * this tracker hides their equipment.
+     * <p>
+     * By default their client gets the real stack drawn by an item model that draws nothing, which
+     * hides it in third person but also in the inventory and in first person. A mapper replaces that:
+     * it gets a copy of the stack and returns what the player's client is sent instead, typically the
+     * same item with a flag its own item model reads to draw nothing in the third-person contexts only.
+     * A mapper that returns null leaves that stack to the default. Only that player's own view changes;
+     * the server's item and everyone else's view stay as they are.
+     * It runs on the network thread.
+     * </p>
+     *
+     * @param mapper the mapper, or null for the default
+     * @since 3.5.0-nf.1
+     */
+    public void ownHandItem(@Nullable Function<PlatformItemStack, @Nullable PlatformItemStack> mapper) {
+        this.ownHandItem = mapper;
     }
 }
