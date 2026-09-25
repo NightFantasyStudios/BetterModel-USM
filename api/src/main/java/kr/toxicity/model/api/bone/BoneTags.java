@@ -93,6 +93,15 @@ public enum BoneTags implements BoneTag {
      */
     PLAYER_LEFT_FOREARM(PlayerLimb.LEFT_FOREARM.getItemMapper(), "plfa"),
     /**
+     * Player right arm turning about the shoulder, for rigs made on the Better Combat/PlayerAnimationLib
+     * player (see {@link PlayerLimb#RIGHT_SHOULDER_ARM})
+     */
+    PLAYER_RIGHT_SHOULDER_ARM(PlayerLimb.RIGHT_SHOULDER_ARM.getItemMapper(), "prsa"),
+    /**
+     * Player left arm turning about the shoulder (see {@link PlayerLimb#LEFT_SHOULDER_ARM})
+     */
+    PLAYER_LEFT_SHOULDER_ARM(PlayerLimb.LEFT_SHOULDER_ARM.getItemMapper(), "plsa"),
+    /**
      * Player left hip
      */
     PLAYER_HIP(PlayerLimb.HIP.getItemMapper(), "phip"),
