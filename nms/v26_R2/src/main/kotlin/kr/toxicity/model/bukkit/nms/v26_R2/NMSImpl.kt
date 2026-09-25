@@ -40,6 +40,7 @@ import net.minecraft.network.syncher.EntityDataSerializers
 import net.minecraft.network.syncher.SynchedEntityData
 import net.minecraft.resources.Identifier
 import net.minecraft.server.MinecraftServer
+import net.minecraft.server.level.ServerPlayer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.network.ServerCommonPacketListenerImpl
 import net.minecraft.util.ARGB
@@ -121,7 +122,13 @@ class NMSImpl : NMS {
         )?.let {
             list += ClientboundSetEntityDataPacket(target.id, it).toRegistryDataPacket(channel.uuid(), registry)
         }
-        if (target is LivingEntity) {
+        if (target is ServerPlayer && target.uuid == channel.uuid()) {
+            // A player's own client applies an equipment packet to its inventory: an empty one would
+            // empty the held slot itself, and an empty hand sends no use packet, so a right click in
+            // the air never reached the server. Their own slots go through the inventory packets
+            // instead, which hide the hands without emptying them (hiddenInHand).
+            target.inventoryMenu.sendAllDataToRemote()
+        } else if (target is LivingEntity) {
             val packet = if (registry.hideOption(channel.uuid()).equipment) target.toEmptyEquipmentPacket() else target.toEquipmentPacket()
             packet?.let { list += it }
         }
@@ -231,8 +238,15 @@ class NMSImpl : NMS {
                 is ClientboundSetEquipmentPacket -> {
                     if (hitBoxIds.contains(entity)) return null
                     entity.toRegistry()?.let {
-                        if (it.hideOption(uuid).equipment()) (it.entity().handle() as? LivingEntity)?.toEmptyEquipmentPacket()?.let { packet ->
-                            return packet
+                        if (it.hideOption(uuid).equipment()) {
+                            // Their own client puts these in its inventory: hide the hands without
+                            // emptying them, as the inventory packets do.
+                            if (entity == connection.player.id) return ClientboundSetEquipmentPacket(entity, slots.map { pair ->
+                                com.mojang.datafixers.util.Pair.of(pair.first, if (pair.first.type == net.minecraft.world.entity.EquipmentSlot.Type.HAND) pair.second.hiddenInHand(it) else EMPTY_ITEM)
+                            })
+                            (it.entity().handle() as? LivingEntity)?.toEmptyEquipmentPacket()?.let { packet ->
+                                return packet
+                            }
                         }
                     }
                 }
@@ -245,15 +259,15 @@ class NMSImpl : NMS {
                     }
                 }
                 is ClientboundContainerSetSlotPacket if isEquipment(connection.player) && playerModel?.hideOption(uuid)?.equipment() == true -> {
-                    return ClientboundContainerSetSlotPacket(containerId, stateId, slot, if (slot in PLAYER_ARMOR_SLOT) EMPTY_ITEM else item.hiddenInHand())
+                    return ClientboundContainerSetSlotPacket(containerId, stateId, slot, if (slot in PLAYER_ARMOR_SLOT) EMPTY_ITEM else item.hiddenInHand(playerModel))
                 }
                 is ClientboundContainerSetContentPacket if containerId == 0 && playerModel?.hideOption(uuid)?.equipment() == true -> {
                     return ClientboundContainerSetContentPacket(
                         containerId,
                         stateId,
                         items.apply {
-                            PLAYER_EQUIPMENT_SLOT.forEach(IntConsumer { set(it, if (it in PLAYER_ARMOR_SLOT) EMPTY_ITEM else get(it).hiddenInHand()) })
-                            set(connection.player.hotbarSlot, get(connection.player.hotbarSlot).hiddenInHand())
+                            PLAYER_EQUIPMENT_SLOT.forEach(IntConsumer { set(it, if (it in PLAYER_ARMOR_SLOT) EMPTY_ITEM else get(it).hiddenInHand(playerModel)) })
+                            set(connection.player.hotbarSlot, get(connection.player.hotbarSlot).hiddenInHand(playerModel))
                         },
                         carriedItem
                     )
@@ -401,13 +415,21 @@ class NMSImpl : NMS {
 }
 
 /**
- * The player's own held and off-hand items while their limb is shown, as their client gets them: the
- * real stack drawn by an item model that draws nothing (`<namespace>:hidden_item`). Emptying the slot
- * hid the item just the same, but an empty hand sends no use packet, so a right click in the air
- * never reached the server - the item stopped working for as long as the model was on.
+ * The player's own held and off-hand items while their limb is shown, as their client gets them. A
+ * tracker that says how ([EntityTrackerRegistry.ownHandItem]) gets a copy to map - typically the same
+ * item flagged so its own item model draws nothing in third person, keeping it in the inventory and in
+ * first person; it returns null for an item it leaves alone. Otherwise the real stack is drawn by an item model that draws nothing at all
+ * (`<namespace>:hidden_item`). Either way the hand is never emptied: an empty hand sends no use packet,
+ * so a right click in the air would never reach the server.
  */
-private fun VanillaItemStack.hiddenInHand(): VanillaItemStack = if (isEmpty) this else copy().apply {
-    set(DataComponents.ITEM_MODEL, Identifier.fromNamespaceAndPath(CONFIG.namespace(), "hidden_item"))
+private fun VanillaItemStack.hiddenInHand(registry: EntityTrackerRegistry?): VanillaItemStack {
+    if (isEmpty) return this
+    registry?.ownHandItem()?.let { mapper ->
+        runCatching { mapper.apply(copy().asBukkit().wrap())?.let { return it.unwarp().asVanilla() } }
+    }
+    return copy().apply {
+        set(DataComponents.ITEM_MODEL, Identifier.fromNamespaceAndPath(CONFIG.namespace(), "hidden_item"))
+    }
 }
 
 /** Armour slots stay empty: armour is drawn from its equippable asset, not its item model. */
