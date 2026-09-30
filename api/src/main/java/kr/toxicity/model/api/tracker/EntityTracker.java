@@ -19,6 +19,7 @@ import kr.toxicity.model.api.event.DismountModelEvent;
 import kr.toxicity.model.api.event.MountModelEvent;
 import kr.toxicity.model.api.nms.HitBox;
 import kr.toxicity.model.api.nms.HitBoxListener;
+import kr.toxicity.model.api.nms.ModelDisplay;
 import kr.toxicity.model.api.platform.PlatformItemStack;
 import kr.toxicity.model.api.platform.PlatformLocation;
 import kr.toxicity.model.api.platform.PlatformPlayer;
@@ -79,6 +80,8 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
     private volatile @Nullable Function<PlatformItemStack, @Nullable PlatformItemStack> ownHandItem;
 
     private volatile PlatformLocation location;
+    private @Nullable ModelDisplay shadowDisplay;
+    private volatile boolean synchronizeShadowPosition;
 
     /**
      * Creates a new entity tracker.
@@ -106,13 +109,17 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
                 var shadow = BetterModel.nms().create(entity.location(), d -> {
                     if (entity instanceof BasePlayer) d.moveDuration(1);
                 });
+                shadowDisplay = shadow;
                 var baseScale = (float) (box.x() + box.z()) / 4F;
                 var posCache = new BoneMovement();
                 tick(((_, s) -> {
                     var wPos = bone.hitBoxPosition(posCache);
                     shadow.shadowRadius(scale.getAsFloat() * baseScale);
                     shadow.syncPotionEffect(entity);
-                    shadow.syncPosition(location().add(wPos.x, wPos.y, wPos.z));
+                    // The opt-in path checks the same source snapshot as sendPosition,
+                    // rather than the location refreshed by a later tick handler.
+                    var shadowLocation = synchronizeShadowPosition ? entity.location() : location();
+                    shadow.syncPosition(shadowLocation.add(wPos.x, wPos.y, wPos.z));
                     shadow.sendDirtyEntityData(s.getDataBundler());
                     shadow.sendPosition(entity, s.getTickBundler());
                 }));
@@ -199,6 +206,28 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
      */
     public @NotNull EntityTrackerRegistry registry() {
         return registry;
+    }
+
+    /**
+     * Configures this tracker's shadow movement and synchronizes its movement check
+     * with the current source location. Trackers that do not call this method retain
+     * their existing shadow policy. Longer durations smooth packet arrival jitter
+     * but add interpolation delay; this does not provide local-player prediction.
+     * <pre>{@code
+     * renderer.getOrCreate(player, TrackerModifier.DEFAULT,
+     *     tracker -> tracker.shadowMovementDuration(2));
+     * }</pre>
+     *
+     * @param duration position interpolation duration in Minecraft ticks, from 0 to 59
+     * @return true if configured, false if no shadow exists or the duration is invalid
+     * @since 3.5.0-nf.1
+     */
+    public boolean shadowMovementDuration(int duration) {
+        var shadow = shadowDisplay;
+        if (shadow == null || duration < 0 || duration > 59) return false;
+        shadow.moveDuration(duration);
+        synchronizeShadowPosition = true;
+        return true;
     }
 
     /**

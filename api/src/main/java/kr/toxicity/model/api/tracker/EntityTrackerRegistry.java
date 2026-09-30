@@ -595,6 +595,8 @@ public final class EntityTrackerRegistry {
 
     /**
      * Returns the hide option for a specific player.
+     * A registered viewer hides nothing until at least one tracker is spawned for them.
+     * This also applies when every tracker rejects that viewer's spawn condition.
      *
      * @param uuid the player UUID
      * @return the hide option
@@ -687,7 +689,9 @@ public final class EntityTrackerRegistry {
     @RequiredArgsConstructor
     private class PlayerChannelCache {
         private final PlayerChannelHandler channelHandler;
-        private volatile EntityHideOption hideOption = EntityHideOption.DEFAULT;
+        // Registering a channel is not a model spawn. A denied/empty spawn must
+        // leave the original body and equipment visible for this viewer.
+        private volatile EntityHideOption hideOption = EntityHideOption.FALSE;
 
         private void hide() {
             reapplyHideOption();

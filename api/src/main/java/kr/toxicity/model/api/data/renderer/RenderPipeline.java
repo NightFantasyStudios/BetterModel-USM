@@ -62,6 +62,7 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
     private final SequencedMap<BoneName, RenderedBone> byIdMap;
 
     private final int displayAmount;
+    private volatile boolean atomicAnimationPackets;
     private final Map<UUID, SpawnedPlayer> playerMap = new ConcurrentHashMap<>();
     private final Set<UUID> hidePlayerSet = ConcurrentHashMap.newKeySet();
 
@@ -139,9 +140,26 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
         var size = BetterModel.config().packetBundlingSize();
         var nms = BetterModel.nms();
         return new AnimationBundler(
-            size <= 0 ? createBundler() : nms.createParallelBundler(size),
+            atomicAnimationPackets || size <= 0 ? createBundler() : nms.createParallelBundler(size),
             nms.createModAnimationBuilder(displayAmount)
         );
+    }
+
+    /**
+     * Keeps each animation update in one vanilla bundle instead of splitting it by
+     * the configured packet weight. Enable this for small rigs whose bones must
+     * be processed together. Existing bundlers retain their original policy.
+     * Defaults to false; other pipelines retain the configured bundling behavior.
+     *
+     * <pre>{@code
+     * tracker.getPipeline().atomicAnimationPackets(true);
+     * }</pre>
+     *
+     * @param atomic whether subsequent animation bundlers must keep the pose together
+     * @since 3.5.0-nf.1
+     */
+    public void atomicAnimationPackets(boolean atomic) {
+        atomicAnimationPackets = atomic;
     }
 
     @Override

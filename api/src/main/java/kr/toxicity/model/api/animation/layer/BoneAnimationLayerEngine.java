@@ -28,6 +28,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.BiConsumer;
+import java.util.function.DoubleUnaryOperator;
 
 /**
  * Internal state-machine layer engine for a single bone.
@@ -69,6 +71,26 @@ public final class BoneAnimationLayerEngine {
     public boolean hasSlots() {
         synchronized (stateSlots) {
             return !stateSlotsByKey.isEmpty();
+        }
+    }
+
+    /**
+     * Configures an opt-in render sampler without advancing the slot's lifecycle clock.
+     * <pre>{@code engine.configureSampling("attack", time -> time + .025, null);}</pre>
+     * @param slotKey existing slot identifier
+     * @param timeMapper source seconds to render seconds, or null for ordinary sampling
+     * @param adjustment sampled movement and read-only rest movement, or null
+     * @return true if the slot exists
+     * @since 3.5.0
+     */
+    public boolean configureSampling(@NotNull String slotKey, @Nullable DoubleUnaryOperator timeMapper,
+                                     @Nullable BiConsumer<BoneMovement, BoneMovement> adjustment) {
+        synchronized (stateSlots) {
+            var slot = stateSlotsByKey.get(slotKey);
+            if (slot == null) return false;
+            slot.timeMapper = timeMapper;
+            slot.adjustment = adjustment;
+            return true;
         }
     }
 
@@ -606,6 +628,8 @@ public final class BoneAnimationLayerEngine {
         private @Nullable SampledState previous;
         private float elapsedSeconds;
         private float phaseSeconds;
+        private @Nullable DoubleUnaryOperator timeMapper;
+        private @Nullable BiConsumer<BoneMovement, BoneMovement> adjustment;
 
         private StateAnimationSlot(
             @NotNull String slotKey,
@@ -713,14 +737,21 @@ public final class BoneAnimationLayerEngine {
 
         private @NotNull SampledState sampleCurrent() {
             var effectiveChannels = emptyZero ? EnumSet.allOf(AnimationChannel.class) : channels;
-            return sampleAnimator(
+            var sampledSeconds = elapsedSeconds;
+            if (timeMapper != null) {
+                var mapped = timeMapper.applyAsDouble(elapsedSeconds);
+                if (Double.isFinite(mapped)) sampledSeconds = (float) Math.clamp(mapped, 0, animation.length());
+            }
+            var sample = sampleAnimator(
                 animator,
                 effectiveChannels,
-                elapsedSeconds,
+                sampledSeconds,
                 type,
                 Math.max(modifier.speedValue(), MathUtil.FLOAT_COMPARISON_EPSILON),
                 animation.frameDuration()
             );
+            if (adjustment != null) adjustment.accept(sample.movement(), defaultFrame);
+            return sample;
         }
 
         private @NotNull TickResult tick() {

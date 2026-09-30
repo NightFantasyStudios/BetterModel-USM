@@ -45,7 +45,15 @@ val generatePaperLibrary = tasks.register("generatePaperLibrary") {
     }
 }
 
+// The desktop panel scans this module's target directory. Keep a Paper-only
+// deployment output; the root build/libs also contains Fabric/Spigot artifacts.
+val stagePanelJar = tasks.register<Sync>("stagePanelJar") {
+    from(tasks.shadowJar.flatMap { it.archiveFile })
+    into(layout.projectDirectory.dir("target"))
+}
+
 tasks.shadowJar {
+    finalizedBy(stagePanelJar)
     dependsOn(generatePaperLibrary)
     from(libraryDir)
     manifest {
