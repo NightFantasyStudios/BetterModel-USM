@@ -566,6 +566,27 @@ public final class RenderedBone implements BoneEventHandler {
     }
 
     /**
+     * Opts an existing slot into render-time prediction or pose adjustment. Slot
+     * timers and completion callbacks retain their original timing. Callbacks
+     * run on the model worker and must not access platform entity state.
+     * <pre>{@code bone.configureStateAnimationSampling("attack", null, t -> t + .025, null);}</pre>
+     * @param slotKey existing slot identifier
+     * @param player slot owner, or null for the shared slot
+     * @param timeMapper source seconds to render seconds, or null to reset
+     * @param adjustment sampled movement and read-only rest movement, or null to reset
+     * @return true if the slot exists
+     * @since 3.5.0
+     */
+    public boolean configureStateAnimationSampling(@NotNull String slotKey, @Nullable PlatformPlayer player,
+        @Nullable java.util.function.DoubleUnaryOperator timeMapper,
+        @Nullable java.util.function.BiConsumer<BoneMovement, BoneMovement> adjustment) {
+        var handler = state(player);
+        var changed = handler.layerEngine.configureSampling(slotKey, timeMapper, adjustment);
+        if (changed) handler.markDirty();
+        return changed;
+    }
+
+    /**
      * Clears all state-machine slots from this bone.
      *
      * @since 3.0.2
