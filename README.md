@@ -3,7 +3,7 @@
 ![](https://github.com/user-attachments/assets/89e191ba-ed4f-44ab-bb98-634cfe568dca)
 
 # BetterModel USM
-*- Fork of [BetterModel](https://github.com/toxicity188/BetterModel) that adds ModelEngine's **USM (Unified State Machine)** -*
+*- Fork of [BetterModel](https://github.com/toxicity188/BetterModel) that adds ModelEngine's **USM (Use State Machine)** -*
 
 [![](https://img.shields.io/maven-central/v/io.github.toxicity188/bettermodel-api?style=flat-square&logo=sonatype)](https://central.sonatype.com/artifact/io.github.toxicity188/bettermodel-api)
 [![](https://img.shields.io/github/actions/workflow/status/toxicity188/BetterModel/publish.yml?style=flat-square)](https://modrinth.com/plugin/bettermodel/versions)
@@ -22,7 +22,7 @@
 
 # ✨ Introduction
 
-**BetterModel USM** is a fork of [BetterModel](https://github.com/toxicity188/BetterModel) that adds ModelEngine's **USM (Unified State Machine)** (animation slots, transition priorities, lerp-out, and completion callbacks), along with custom player-rig and animation extensions.
+**BetterModel USM** is a fork of [BetterModel](https://github.com/toxicity188/BetterModel) that adds ModelEngine's **USM (Use State Machine)** (animation slots, transition priorities, lerp-out, and completion callbacks), along with custom player-rig and animation extensions.
 
 **BetterModel** is a server-based engine that provides runtime [BlockBench](https://www.blockbench.net/) model rendering & animating for Minecraft Java Edition.
 
