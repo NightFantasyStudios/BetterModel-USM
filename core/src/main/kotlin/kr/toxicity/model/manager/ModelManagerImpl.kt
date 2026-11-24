@@ -10,6 +10,7 @@ package kr.toxicity.model.manager
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import kr.toxicity.model.api.bone.BoneItemMapper
+import kr.toxicity.model.api.skin.SkinBoneBinding
 import kr.toxicity.model.api.data.ModelAsset
 import kr.toxicity.model.api.data.blueprint.BlueprintElement
 import kr.toxicity.model.api.data.blueprint.BlueprintJson
@@ -158,7 +159,13 @@ object ModelManagerImpl : ModelManager, GlobalManager {
         ) {
             val (size, type, blueprint) = importedModel
             val context = blueprint.context()
-            targetMap[blueprint.name] = blueprint.toRenderer(type) render@ { group ->
+            val bindings = runCatching {
+                SkinRig.load(File(DATA_FOLDER, "skin-rigs/${blueprint.name}.json"), blueprint)
+            }.getOrElse {
+                it.handleException("Unable to load skin rig for ${blueprint.name}")
+                return
+            }
+            targetMap[blueprint.name] = blueprint.toRenderer(type, bindings) render@ { group ->
                 if (!context.canBeRendered()) return@render null
                 modernModel.ifAvailable {
                     val json = group.buildModernJson(obfuscator, context)
@@ -177,6 +184,9 @@ object ModelManagerImpl : ModelManager, GlobalManager {
                     )
                 }
                 callEvent { ModelImportedEvent(blueprint, this) }
+                if (bindings.isNotEmpty()) info(
+                    "Loaded skin rig '${blueprint.name}': ${bindings.size} complete parts, ${animations().size} animations.".toComponent(GREEN)
+                )
             }
             context.buildImage(textures.obfuscator()).forEach { image ->
                 textures.add(image.pngName(), image.estimatedSize()) {
@@ -227,20 +237,22 @@ object ModelManagerImpl : ModelManager, GlobalManager {
             )
         )
 
-        private fun ModelBlueprint.toRenderer(type: ModelRenderer.Type, builder: (BlueprintElement.Group) -> String?): ModelRenderer {
+        private fun ModelBlueprint.toRenderer(type: ModelRenderer.Type, bindings: Map<String, SkinBoneBinding>, builder: (BlueprintElement.Group) -> String?): ModelRenderer {
             fun <T> Collection<BlueprintElement>.toBoneMap(mapper: (BlueprintElement.Bone) -> T) = filterIsInstance<BlueprintElement.Bone>().let { bone ->
                 bone.associateTo(sequencedAddressingMapOf(bone.size)) { it.name() to mapper(it) }
             }.toImmutableView()
             fun BlueprintElement.Bone.parse(): RendererGroup {
-                if (this !is BlueprintElement.Group) return RendererGroup(1.0F, null, this, emptySequencedMap(), null)
+                val mapper = bindings[name().rawName()]?.toItemMapper() ?: name().toItemMapper()
+                if (this !is BlueprintElement.Group) return RendererGroup(1.0F, null, this, emptySequencedMap(), null, mapper)
                 return RendererGroup(
                     scale(),
-                    if (name.toItemMapper() !== BoneItemMapper.EMPTY) null else builder(this)?.let { itemNamespace ->
+                    if (mapper !== BoneItemMapper.EMPTY) null else builder(this)?.let { itemNamespace ->
                         CONFIG.item().get().itemModel(PlatformNamespace(CONFIG.namespace(), itemNamespace))
                     },
                     this,
                     children.toBoneMap { it.parse() },
                     hitBox(),
+                    mapper,
                 )
             }
             return ModelRenderer(

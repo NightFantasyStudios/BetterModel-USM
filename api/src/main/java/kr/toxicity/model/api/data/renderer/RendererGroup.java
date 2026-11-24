@@ -69,6 +69,28 @@ public final class RendererGroup {
         @NotNull SequencedMap<BoneName, RendererGroup> children,
         @Nullable ModelBoundingBox box
     ) {
+        this(scale, itemStack, group, children, box, group.name().toItemMapper());
+    }
+
+    /**
+     * Creates a group with an explicit skin mapper while retaining its original bone.
+     * Example: {@code new RendererGroup(1, null, bone, children, null, binding.toItemMapper())}.
+     * @param scale scale
+     * @param itemStack item
+     * @param group original bone
+     * @param children child bones
+     * @param box hit-box
+     * @param itemMapper explicit mapper
+     * @since 3.5.0
+     */
+    public RendererGroup(
+        float scale,
+        @Nullable PlatformItemStack itemStack,
+        @NotNull BlueprintElement.Bone group,
+        @NotNull SequencedMap<BoneName, RendererGroup> children,
+        @Nullable ModelBoundingBox box,
+        @NotNull BoneItemMapper itemMapper
+    ) {
         this.parent = group;
         this.children = children;
         this.itemStack = TransformedItemStack.of(
@@ -77,7 +99,7 @@ public final class RendererGroup {
             new Vector3f(scale),
             itemStack != null ? itemStack : BetterModel.platform().adapter().air()
         );
-        this.itemMapper = name().toItemMapper();
+        this.itemMapper = itemMapper;
         this.position = group.origin().toBlockScale().toVector();
         this.hitBox = box;
         this.hitBoxPoint = box == null ? new Vector3f() : box.centerPoint();

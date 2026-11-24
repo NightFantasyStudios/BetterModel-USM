@@ -22,12 +22,15 @@ import kr.toxicity.model.api.pack.PackZipper
 import kr.toxicity.model.api.profile.ModelProfile
 import kr.toxicity.model.api.profile.ModelProfileInfo
 import kr.toxicity.model.api.skin.SkinData
+import kr.toxicity.model.api.skin.SkinPart
 import kr.toxicity.model.api.util.TransformedItemStack
 import kr.toxicity.model.util.*
 import org.joml.Vector3f
 import java.awt.image.BufferedImage
 import java.net.URI
 import java.net.http.HttpResponse
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -574,6 +577,42 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         )
     )
 
+    // Complete pieces have their own pack models: merging halves does not add displays
+    // or internal cut faces. Existing segmented player models remain unchanged.
+    private fun fullPiece(name: String, width: Int, height: Int, depth: Int,
+                          u: Int, v: Int, overlayU: Int, overlayV: Int, inflate: Float): UVModel {
+        fun faces(x: Int, y: Int) = mapOf(
+            UVFace.NORTH to UVPos(x + depth, y + depth),
+            UVFace.SOUTH to UVPos(x + depth + width + depth, y + depth),
+            UVFace.EAST to UVPos(x, y + depth),
+            UVFace.WEST to UVPos(x + depth + width, y + depth),
+            UVFace.UP to UVPos(x + depth, y),
+            UVFace.DOWN to UVPos(x + depth + width, y)
+        )
+        val size = ElementVector(width.toFloat(), height.toFloat(), depth.toFloat()).div(16F)
+        return UVModel({ uvNamespace }, name).addElement(
+            UVElement(size, ElementVector(0F, 0F, 0F), UVSpace(width, height, depth),
+                UVElement.ColorType.RGB, faces(u, v))
+        ).addElement(
+            UVElement(ElementVector(width.toFloat(), height.toFloat(), depth.toFloat()).div(16F).inflate(inflate),
+                ElementVector(0F, 0F, 0F), UVSpace(width, height, depth),
+                UVElement.ColorType.COMPLEX_ARGB, faces(overlayU, overlayV))
+        )
+    }
+
+    private val fullModels = mapOf(
+        SkinPart.HEAD to fullPiece("full_head", 8, 8, 8, 0, 0, 32, 0, 0.5F),
+        SkinPart.BODY to fullPiece("full_body", 8, 12, 4, 16, 16, 16, 32, 0.25F),
+        SkinPart.RIGHT_ARM to fullPiece("full_right_arm", 4, 12, 4, 40, 16, 40, 32, 0.25F),
+        SkinPart.LEFT_ARM to fullPiece("full_left_arm", 4, 12, 4, 32, 48, 48, 48, 0.25F),
+        SkinPart.RIGHT_LEG to fullPiece("full_right_leg", 4, 12, 4, 0, 16, 0, 32, 0.25F),
+        SkinPart.LEFT_LEG to fullPiece("full_left_leg", 4, 12, 4, 16, 48, 0, 48, 0.25F)
+    )
+    private val fullSlimArms = mapOf(
+        SkinPart.RIGHT_ARM to fullPiece("full_slim_right_arm", 3, 12, 4, 40, 16, 40, 32, 0.25F),
+        SkinPart.LEFT_ARM to fullPiece("full_slim_left_arm", 3, 12, 4, 32, 48, 48, 48, 0.25F)
+    )
+
     private data class SkinModelData(
         private val model: UVModel,
         val data: UVModelData
@@ -654,6 +693,8 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         SLIM_RIGHT_ARM.write(ArmorResource.RIGHT_ARM)
         SLIM_RIGHT_FOREARM.write()
         CAPE.write()
+        fullModels.values.forEach { it.write() }
+        fullSlimArms.values.forEach { it.write() }
 
         block(UVTextureName.DEFAULT.normalPixel(uvNamespace))
         block(UVTextureName.DEFAULT.translucentPixel(uvNamespace))
@@ -696,6 +737,20 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         }.thenComposeAsync compose@ { selected ->
             val skin = selected.skin().skin ?: return@compose CompletableFuture.completedFuture(fallback)
             val cape = selected.skin().cape
+            // Local profiles are already complete: no Mojang/MineSkin lookup or HTTP request.
+            if (skin.scheme.equals("file", ignoreCase = true)) {
+                return@compose CompletableFuture.supplyAsync {
+                    val image = Files.newInputStream(Path.of(skin)).use { ImageIO.read(it) }
+                        ?: error("Local skin is not a readable image: $skin")
+                    require(image.width == 64 && (image.height == 64 || image.height == 32)) {
+                        "Local skin must be 64x64 or 64x32: $skin"
+                    }
+                    require(cape == null) { "Local skin profiles do not support capes" }
+                    SkinDataImpl(selected, image.convertLegacy(), null).apply {
+                        profileCache.put(profile.info().id, this)
+                    }
+                }
+            }
             httpClient {
                 fun URI.toFuture() = sendAsync(
                     buildHttpRequest {
@@ -769,7 +824,8 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         private val rightForeLeg: SkinModelData,
         private val leftForeArm: TransformedItemStack,
         private val rightForeArm: TransformedItemStack,
-        private val cape: TransformedItemStack?
+        private val cape: TransformedItemStack?,
+        private val fullParts: Lazy<Map<SkinPart, SkinModelData>>
     ) : SkinData {
 
         constructor(
@@ -790,9 +846,15 @@ object SkinManagerImpl : SkinManager, GlobalManager {
             RIGHT_FORELEG.asModelData(skinImage),
             (if (profile.skin().slim) SLIM_LEFT_FOREARM else LEFT_FOREARM).asModelData(skinImage).asItem(),
             (if (profile.skin().slim) SLIM_RIGHT_FOREARM else RIGHT_FOREARM).asModelData(skinImage).asItem(),
-            capeImage?.let { CAPE.asModelData(it).asItem() }
+            capeImage?.let { CAPE.asModelData(it).asItem() },
+            lazy {
+                fullModels.mapValues { (part, model) ->
+                    (if (profile.skin().slim) fullSlimArms[part] ?: model else model).asModelData(skinImage)
+                }
+            }
         )
         override fun profile(): ModelProfile = profile
+        override fun fullPart(part: SkinPart): TransformedItemStack = fullParts.value.getValue(part).asItem()
         override fun head(armor: PlayerArmor): TransformedItemStack = head.asItem(ArmorResource.HELMET, armor.helmet())
         override fun hip(armor: PlayerArmor): TransformedItemStack = hip.asItem(ArmorResource.HIP, armor.leggings())
         override fun waist(armor: PlayerArmor): TransformedItemStack = waist.asItem(ArmorResource.WAIST, armor.chestplate())
@@ -808,6 +870,7 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         override fun cape(armor: PlayerArmor): TransformedItemStack? = if (armor.chestplate() != null) cape?.offset(Vector3f(0F, 0F, -1F / 16F)) else cape
 
         fun refresh() {
+            if (fullParts.isInitialized()) fullParts.value.values.forEach { it.refresh() }
             head.refresh()
             hip.refresh()
             waist.refresh()
@@ -835,6 +898,7 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         profileCache.asMap().entries.forEach {
             it.value.refresh()
         }
+        fallback.refresh()
     }
 
     override fun end() {

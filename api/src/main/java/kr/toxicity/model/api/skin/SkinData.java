@@ -19,6 +19,19 @@ import org.jetbrains.annotations.Nullable;
 public interface SkinData {
 
     /**
+     * Gets a complete rigid skin piece centered at zero, without armor overlays.
+     * Existing segmented limb methods retain their behavior.
+     * Example: {@code skin.fullPart(SkinPart.RIGHT_ARM)}.
+     * @param part complete part
+     * @return skin item in full-pixel proportions
+     * @throws UnsupportedOperationException if this provider does not support complete pieces
+     * @since 3.5.0
+     */
+    default @NotNull TransformedItemStack fullPart(@NotNull SkinPart part) {
+        throw new UnsupportedOperationException("Complete skin pieces are not supported by this provider");
+    }
+
+    /**
      * Gets model skin
      * @return skin
      */
