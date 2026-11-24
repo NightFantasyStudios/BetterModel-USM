@@ -11,6 +11,7 @@ import kr.toxicity.model.api.animation.AnimationChannel;
 import kr.toxicity.model.api.animation.AnimationIterator;
 import kr.toxicity.model.api.animation.AnimationModifier;
 import kr.toxicity.model.api.animation.AnimationProgress;
+import kr.toxicity.model.api.animation.keyframe.KeyframeRuntimeContext;
 import kr.toxicity.model.api.bone.BoneMovement;
 import kr.toxicity.model.api.bone.BoneName;
 import kr.toxicity.model.api.data.blueprint.BlueprintAnimation;
@@ -263,6 +264,7 @@ public final class BoneAnimationLayerEngine {
      * @since 3.0.2
      */
     public @NotNull LayerComposition compose(
+        @NotNull KeyframeRuntimeContext context,
         @NotNull BoneMovement target,
         boolean baseSkipInterpolation,
         boolean baseGlobalRotation,
@@ -277,8 +279,8 @@ public final class BoneAnimationLayerEngine {
                     if (!slot.modifier().predicateValue()) {
                         continue;
                     }
-                    var currentSample = slot.sampleCurrent();
-                    var previousSample = slot.previous();
+                    var currentSample = slot.sampleCurrent(context);
+                    var previousSample = slot.previous(context);
                     frameDuration = mergeFrame(frameDuration, currentSample.frameDuration());
                     if (previousSample != null) {
                         frameDuration = mergeFrame(frameDuration, previousSample.frameDuration());
@@ -390,6 +392,7 @@ public final class BoneAnimationLayerEngine {
     }
 
     private @NotNull SampledState sampleAnimator(
+        @NotNull KeyframeRuntimeContext context,
         @Nullable BlueprintAnimator animator,
         @NotNull EnumSet<AnimationChannel> channels,
         float elapsedSeconds,
@@ -410,7 +413,7 @@ public final class BoneAnimationLayerEngine {
         if (elapsedSeconds <= MathUtil.FLOAT_COMPARISON_EPSILON) {
             var progress = keyframe.get(0);
             return new SampledState(
-                progress.animate(defaultFrame, new BoneMovement()),
+                progress.animate(context, defaultFrame, new BoneMovement()),
                 copyChannels(channels),
                 progress.skipInterpolation(),
                 progress.globalRotation(),
@@ -433,10 +436,10 @@ public final class BoneAnimationLayerEngine {
             var next = keyframe.get(i);
             cumulative += next.time();
             if (localTime <= cumulative + MathUtil.FLOAT_COMPARISON_EPSILON) {
-                var beforeMovement = before.animate(defaultFrame, new BoneMovement());
+                var beforeMovement = before.animate(context, defaultFrame, new BoneMovement());
                 if (next.time() <= MathUtil.FLOAT_COMPARISON_EPSILON || next.skipInterpolation()) {
                     return new SampledState(
-                        next.animate(defaultFrame, new BoneMovement()),
+                        next.animate(context, defaultFrame, new BoneMovement()),
                         copyChannels(channels),
                         before.skipInterpolation() || next.skipInterpolation(),
                         before.globalRotation() || next.globalRotation(),
@@ -445,7 +448,7 @@ public final class BoneAnimationLayerEngine {
                 }
                 float start = cumulative - next.time();
                 float alpha = Math.clamp((localTime - start) / next.time(), 0F, 1F);
-                var afterMovement = next.animate(defaultFrame, new BoneMovement());
+                var afterMovement = next.animate(context, defaultFrame, new BoneMovement());
                 return new SampledState(
                     beforeMovement.lerp(afterMovement, alpha, new BoneMovement()),
                     copyChannels(channels),
@@ -458,7 +461,7 @@ public final class BoneAnimationLayerEngine {
         }
 
         return new SampledState(
-            keyframe.getLast().animate(defaultFrame, new BoneMovement()),
+            keyframe.getLast().animate(context, defaultFrame, new BoneMovement()),
             copyChannels(channels),
             keyframe.getLast().skipInterpolation(),
             keyframe.getLast().globalRotation(),
@@ -710,16 +713,16 @@ public final class BoneAnimationLayerEngine {
 
         private void capturePrevious(@NotNull StateAnimationSlot previousSlot) {
             this.outgoingSlot = previousSlot;
-            this.previous = previousSlot.sampleCurrent();
+            this.previous = previousSlot.sampleCurrent(KeyframeRuntimeContext.empty());
         }
 
         private void capturePrevious(@NotNull SampledState previous) {
             this.previous = previous;
         }
 
-        private @Nullable SampledState previous() {
+        private @Nullable SampledState previous(@NotNull KeyframeRuntimeContext context) {
             if (outgoingSlot != null) {
-                return outgoingSlot.sampleCurrent();
+                return outgoingSlot.sampleCurrent(context);
             }
             return previous;
         }
@@ -735,7 +738,7 @@ public final class BoneAnimationLayerEngine {
             return true;
         }
 
-        private @NotNull SampledState sampleCurrent() {
+        private @NotNull SampledState sampleCurrent(@NotNull KeyframeRuntimeContext context) {
             var effectiveChannels = emptyZero ? EnumSet.allOf(AnimationChannel.class) : channels;
             var sampledSeconds = elapsedSeconds;
             if (timeMapper != null) {
@@ -743,6 +746,7 @@ public final class BoneAnimationLayerEngine {
                 if (Double.isFinite(mapped)) sampledSeconds = (float) Math.clamp(mapped, 0, animation.length());
             }
             var sample = sampleAnimator(
+                context,
                 animator,
                 effectiveChannels,
                 sampledSeconds,

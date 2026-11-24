@@ -809,6 +809,7 @@ public final class RenderedBone implements BoneEventHandler {
             var globalRotation = keyframe.globalRotation();
             if (layerEngine.hasSlots()) {
                 var result = layerEngine.compose(
+                    context,
                     def,
                     keyframe.skipInterpolation(),
                     globalRotation,
