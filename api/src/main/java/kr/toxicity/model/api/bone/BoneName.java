@@ -12,6 +12,10 @@ import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Unmodifiable;
 import org.jspecify.annotations.NonNull;
+import kr.toxicity.model.api.platform.PlatformItemTransform;
+import kr.toxicity.model.api.player.PlayerLimb;
+import kr.toxicity.model.api.util.TransformedItemStack;
+import org.joml.Vector3f;
 
 import java.util.Objects;
 import java.util.Set;
@@ -65,10 +69,29 @@ public record BoneName(
 
     /**
      * Gets an item mapper of this bone name.
+     * Skin limb names with the {@code px} tag, such as {@code px_ph_head}, retain
+     * full-pixel rig proportions instead of BetterModel's default 0.9375 skin scale.
      * @return item mapper
      */
     public @NotNull BoneItemMapper toItemMapper() {
-        return tags.isEmpty() ? BoneItemMapper.EMPTY : tags.stream().map(BoneTag::itemMapper).filter(Objects::nonNull).findFirst().orElse(BoneItemMapper.EMPTY);
+        var mapper = tags.isEmpty() ? BoneItemMapper.EMPTY : tags.stream().map(BoneTag::itemMapper).filter(Objects::nonNull).findFirst().orElse(BoneItemMapper.EMPTY);
+        if (!tagged(BoneTags.PLAYER_PIXEL) || !(mapper instanceof PlayerLimb.LimbItemMapper)) return mapper;
+        return new BoneItemMapper() {
+            @Override
+            public @NotNull PlatformItemTransform transform() {
+                return mapper.transform();
+            }
+
+            @Override
+            public @NotNull TransformedItemStack apply(
+                    @NotNull BoneRenderContext context,
+                    @NotNull TransformedItemStack original) {
+                var item = mapper.apply(context, original);
+                return TransformedItemStack.of(new Vector3f(item.position()),
+                        new Vector3f(item.offset()).div(0.9375F),
+                        new Vector3f(item.scale()).div(0.9375F), item.itemStack());
+            }
+        };
     }
 
     @Override

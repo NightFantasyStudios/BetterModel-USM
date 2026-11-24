@@ -77,6 +77,13 @@ public enum BoneTags implements BoneTag {
      */
     PLAYER_HEAD(PlayerLimb.HEAD.getItemMapper(), "ph"),
     /**
+     * Renders skin parts at one model pixel per skin pixel instead of the default 0.9375.
+     * Combine with a player limb tag, for example {@code px_ph_head}, when adapting
+     * a rig whose pivots and animations are authored in full Minecraft pixels.
+     * @since 3.5.0
+     */
+    PLAYER_PIXEL("px"),
+    /**
      * Player right arm
      */
     PLAYER_RIGHT_ARM(PlayerLimb.RIGHT_ARM.getItemMapper(), "pra"),

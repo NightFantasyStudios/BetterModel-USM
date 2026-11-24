@@ -10,4 +10,8 @@ dependencies {
 
     compileOnly(libs.bundles.core)
     compileOnly(libs.cloud.core)
+    testImplementation(libs.bundles.minecraft)
+    testImplementation(kotlin("test-junit5"))
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.11.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.4")
 }
